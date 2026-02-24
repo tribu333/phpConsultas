@@ -13,43 +13,54 @@ $database = new Database();
 $db = $database->getConnection();
 
 try {
-    // Dividir en palabras y buscar cada una
-    $words = preg_split('/\s+/', $searchTerm);
-    $words = array_filter($words); // Eliminar elementos vacíos
+    // Verificar si el término de búsqueda parece un documento (solo números)
+    $isDocument = preg_match('/^\d+$/', $searchTerm);
     
-    // Si hay múltiples palabras, buscar por cada una
-    if (count($words) > 1) {
-        $conditions = [];
-        $params = [];
-        
-        // Primera palabra puede ser nombre o apellido
-        $conditions[] = "(Nombres LIKE :word0 OR Apellidos LIKE :word0)";
-        $params[':word0'] = "%{$words[0]}%";
-        
-        // Segunda palabra puede ser nombre o apellido
-        $conditions[] = "(Nombres LIKE :word1 OR Apellidos LIKE :word1)";
-        $params[':word1'] = "%{$words[1]}%";
-        
-        $whereClause = implode(' AND ', $conditions);
-        
+    if ($isDocument) {
+        // Búsqueda exacta por documento de identidad
         $query = "SELECT * FROM jurados 
-                  WHERE {$whereClause}
+                  WHERE DocIdentidad = :documento 
                   LIMIT 10";
         
         $stmt = $db->prepare($query);
-        foreach ($params as $key => $value) {
-            $stmt->bindValue($key, $value);
-        }
+        $stmt->bindParam(':documento', $searchTerm);
+        
     } else {
-        // Si solo hay una palabra, búsqueda normal
-        $query = "SELECT * FROM jurados 
-                  WHERE Nombres LIKE :search 
-                     OR Apellidos LIKE :search 
-                  LIMIT 10";
+        // Dividir en palabras para búsqueda por nombres/apellidos
+        $words = preg_split('/\s+/', $searchTerm);
+        $words = array_filter($words); // Eliminar elementos vacíos
+        $wordCount = count($words);
         
-        $stmt = $db->prepare($query);
-        $searchPattern = "%{$searchTerm}%";
-        $stmt->bindParam(':search', $searchPattern);
+        if ($wordCount >= 2) {
+            // Búsqueda EXACTA: nombre completo (nombre + apellido)
+            $nombre = $words[0];
+            $apellido = implode(' ', array_slice($words, 1));
+            
+            $query = "SELECT * FROM jurados 
+                      WHERE Nombres = :nombre 
+                        AND Apellidos = :apellido
+                      LIMIT 10";
+            
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':nombre', $nombre);
+            $stmt->bindParam(':apellido', $apellido);
+            
+        } elseif ($wordCount == 1) {
+            // Búsqueda exacta en nombres O apellidos individualmente
+            $query = "SELECT * FROM jurados 
+                      WHERE Nombres = :termino 
+                         OR Apellidos = :termino
+                      LIMIT 10";
+            
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':termino', $searchTerm);
+        }
+    }
+    
+    // Si no hay condiciones, devolver vacío
+    if (!isset($stmt)) {
+        echo json_encode(['jurados' => []]);
+        exit;
     }
     
     $stmt->execute();
@@ -63,7 +74,7 @@ try {
     
     // Para cada jurado, buscar su notario
     foreach ($jurados as &$jurado) {
-        if (isset($jurado['CodigoMesa'])) {
+        if (isset($jurado['CodigoMesa']) && !empty($jurado['CodigoMesa'])) {
             $notarioQuery = "SELECT * FROM notarios 
                              WHERE Cod_Mesa = :codigoMesa 
                              LIMIT 1";
@@ -73,12 +84,7 @@ try {
             $notarioStmt->execute();
             
             $notario = $notarioStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($notario) {
-                $jurado['notario'] = $notario;
-            } else {
-                $jurado['notario'] = null;
-            }
+            $jurado['notario'] = $notario ?: null;
         } else {
             $jurado['notario'] = null;
         }
