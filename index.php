@@ -79,7 +79,11 @@
                     <button id="clear-btn" class="clear-btn" title="Limpiar">
                         <i class="fas fa-times"></i>
                     </button>
+                    
                 </div>
+                <button id="search-btn" class="search-btn">
+                        <i class="fas fa-search"></i> Buscar
+                    </button>
                 <p class="search-hint">
                     <i class="fas fa-info-circle"></i> Escribe al menos 2 caracteres para comenzar la búsqueda
                 </p>
